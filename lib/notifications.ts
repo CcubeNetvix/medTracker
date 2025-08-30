@@ -1,12 +1,14 @@
+// notificationService.ts
 import twilio from 'twilio';
 import nodemailer from 'nodemailer';
 
-// Twilio configuration
+// ----------------------------
+// CONFIGURATION
+// ----------------------------
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
-// Email configuration
 const emailUser = process.env.EMAIL_USER;
 const emailPass = process.env.EMAIL_PASS;
 
@@ -14,14 +16,19 @@ const emailPass = process.env.EMAIL_PASS;
 const twilioClient = accountSid && authToken ? twilio(accountSid, authToken) : null;
 
 // Initialize email transporter
-const emailTransporter = emailUser && emailPass ? nodemailer.createTransporter({
-  service: 'gmail',
-  auth: {
-    user: emailUser,
-    pass: emailPass
-  }
-}) : null;
+const emailTransporter = emailUser && emailPass
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: emailUser,
+        pass: emailPass,
+      },
+    })
+  : null;
 
+// ----------------------------
+// INTERFACES
+// ----------------------------
 export interface NotificationData {
   userId: string;
   userName: string;
@@ -31,6 +38,10 @@ export interface NotificationData {
   dosage: string;
   scheduledTime: string;
   reminderType: 'sms' | 'email' | 'both';
+
+  // optional fields
+  appointmentDate?: string;
+  daysLeft?: number;
 }
 
 export interface NotificationResult {
@@ -39,44 +50,39 @@ export interface NotificationResult {
   type: 'sms' | 'email';
 }
 
-// Send SMS notification via Twilio
+// ----------------------------
+// CORE UTILITIES
+// ----------------------------
 export const sendSMSNotification = async (
-  phoneNumber: string, 
+  phoneNumber: string,
   message: string
 ): Promise<NotificationResult> => {
   if (!twilioClient || !twilioPhoneNumber) {
-    return {
-      success: false,
-      message: 'Twilio not configured',
-      type: 'sms'
-    };
+    return { success: false, message: 'Twilio not configured', type: 'sms' };
   }
 
   try {
-    const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
-    
+    const formattedPhone = phoneNumber.startsWith('+')
+      ? phoneNumber
+      : `+${phoneNumber}`;
+
     await twilioClient.messages.create({
       body: message,
       from: twilioPhoneNumber,
-      to: formattedPhone
+      to: formattedPhone,
     });
 
-    return {
-      success: true,
-      message: 'SMS sent successfully',
-      type: 'sms'
-    };
+    return { success: true, message: 'SMS sent successfully', type: 'sms' };
   } catch (error) {
     console.error('SMS sending error:', error);
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Failed to send SMS',
-      type: 'sms'
+      type: 'sms',
     };
   }
 };
 
-// Send email notification
 export const sendEmailNotification = async (
   email: string,
   subject: string,
@@ -86,7 +92,7 @@ export const sendEmailNotification = async (
     return {
       success: false,
       message: 'Email service not configured',
-      type: 'email'
+      type: 'email',
     };
   }
 
@@ -94,190 +100,72 @@ export const sendEmailNotification = async (
     await emailTransporter.sendMail({
       from: emailUser,
       to: email,
-      subject: subject,
-      html: htmlContent
+      subject,
+      html: htmlContent,
     });
 
-    return {
-      success: true,
-      message: 'Email sent successfully',
-      type: 'email'
-    };
+    return { success: true, message: 'Email sent successfully', type: 'email' };
   } catch (error) {
     console.error('Email sending error:', error);
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Failed to send email',
-      type: 'email'
+      type: 'email',
     };
   }
 };
 
-// Send medicine reminder notification
+// ----------------------------
+// REMINDER FUNCTIONS
+// ----------------------------
 export const sendMedicineReminder = async (
-  notificationData: NotificationData
+  data: NotificationData
 ): Promise<NotificationResult[]> => {
   const results: NotificationResult[] = [];
-  
-  // Create SMS message
-  const smsMessage = `🔔 MEDPAL REMINDER 🔔\n\nHi ${notificationData.userName},\n\nIt's time to take your medicine:\n💊 ${notificationData.medicineName}\n📏 ${notificationData.dosage}\n⏰ ${new Date(notificationData.scheduledTime).toLocaleTimeString()}\n\nPlease take it now and mark as taken in the app.\n\nStay healthy! 💪`;
+  const smsMessage = `🔔 MEDPAL REMINDER 🔔\n\nHi ${data.userName},\n\nIt's time to take your medicine:\n💊 ${data.medicineName}\n📏 ${data.dosage}\n⏰ ${new Date(
+    data.scheduledTime
+  ).toLocaleTimeString()}`;
 
-  // Create email HTML content
-  const emailHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-        .content { background: #f9f9f9; padding: 20px; border-radius: 0 0 10px 10px; }
-        .medicine-card { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .time { background: #e3f2fd; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; }
-        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>🔔 MEDPAL Medicine Reminder</h1>
-        </div>
-        <div class="content">
-          <h2>Hi ${notificationData.userName},</h2>
-          <p>It's time to take your medicine!</p>
-          
-          <div class="medicine-card">
-            <h3>💊 ${notificationData.medicineName}</h3>
-            <p><strong>Dosage:</strong> ${notificationData.dosage}</p>
-            <div class="time">
-              ⏰ ${new Date(notificationData.scheduledTime).toLocaleString()}
-            </div>
-          </div>
-          
-          <p><strong>Please:</strong></p>
-          <ul>
-            <li>Take your medicine now</li>
-            <li>Mark it as taken in the MedPal app</li>
-            <li>Stay on schedule for better health</li>
-          </ul>
-          
-          <p>If you have any questions, please consult your healthcare provider.</p>
-        </div>
-        <div class="footer">
-          <p>This is an automated reminder from MedPal - Your trusted healthcare companion</p>
-          <p>Stay healthy! 💪</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
+  const emailHtml = `<h1>🔔 Medicine Reminder</h1><p>Hi ${data.userName}, it's time to take your medicine.</p>`;
 
-  // Send notifications based on preference
-  if (notificationData.reminderType === 'sms' || notificationData.reminderType === 'both') {
-    const smsResult = await sendSMSNotification(notificationData.userPhone, smsMessage);
-    results.push(smsResult);
+  if (data.reminderType === 'sms' || data.reminderType === 'both') {
+    results.push(await sendSMSNotification(data.userPhone, smsMessage));
   }
-
-  if (notificationData.reminderType === 'email' || notificationData.reminderType === 'both') {
-    const emailResult = await sendEmailNotification(
-      notificationData.userEmail,
-      '🔔 MedPal Medicine Reminder',
-      emailHtml
+  if (data.reminderType === 'email' || data.reminderType === 'both') {
+    results.push(
+      await sendEmailNotification(
+        data.userEmail,
+        '🔔 MedPal Medicine Reminder',
+        emailHtml
+      )
     );
-    results.push(emailResult);
   }
 
   return results;
 };
 
-// Send missed medicine notification
 export const sendMissedMedicineNotification = async (
-  notificationData: NotificationData
+  data: NotificationData
 ): Promise<NotificationResult[]> => {
   const results: NotificationResult[] = [];
-  
-  // Create SMS message for missed medicine
-  const smsMessage = `⚠️ MEDPAL ALERT ⚠️\n\nHi ${notificationData.userName},\n\nYou missed taking your medicine:\n💊 ${notificationData.medicineName}\n📏 ${notificationData.dosage}\n⏰ ${new Date(notificationData.scheduledTime).toLocaleTimeString()}\n\nPlease take it as soon as possible and update the app.\n\nIf you need assistance, contact your healthcare provider.`;
+  const smsMessage = `⚠️ MEDPAL ALERT ⚠️\n\nHi ${data.userName}, you missed your medicine:\n💊 ${data.medicineName}\n📏 ${data.dosage}`;
 
-  // Create email HTML for missed medicine
-  const emailHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-        .content { background: #f9f9f9; padding: 20px; border-radius: 0 0 10px 10px; }
-        .medicine-card { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #ff6b6b; }
-        .time { background: #ffebee; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; color: #c62828; }
-        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>⚠️ MEDPAL Missed Medicine Alert</h1>
-        </div>
-        <div class="content">
-          <h2>Hi ${notificationData.userName},</h2>
-          <p><strong>You missed taking your medicine!</strong></p>
-          
-          <div class="medicine-card">
-            <h3>💊 ${notificationData.medicineName}</h3>
-            <p><strong>Dosage:</strong> ${notificationData.dosage}</p>
-            <div class="time">
-              ⏰ ${new Date(notificationData.scheduledTime).toLocaleString()}
-            </div>
-          </div>
-          
-          <p><strong>Action Required:</strong></p>
-          <ul>
-            <li>Take your medicine as soon as possible</li>
-            <li>Mark it as taken in the MedPal app</li>
-            <li>Check if you need to adjust your schedule</li>
-          </ul>
-          
-          <p><strong>Important:</strong> If you're unsure about taking a missed dose, please consult your healthcare provider.</p>
-        </div>
-        <div class="footer">
-          <p>This is an automated alert from MedPal - Your trusted healthcare companion</p>
-          <p>Stay on track with your health! 💪</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  // Send notifications based on preference
-  if (notificationData.reminderType === 'sms' || notificationData.reminderType === 'both') {
-    const smsResult = await sendSMSNotification(notificationData.userPhone, smsMessage);
-    results.push(smsResult);
+  if (data.reminderType === 'sms' || data.reminderType === 'both') {
+    results.push(await sendSMSNotification(data.userPhone, smsMessage));
   }
-
-  if (notificationData.reminderType === 'email' || notificationData.reminderType === 'both') {
-    const emailResult = await sendEmailNotification(
-      notificationData.userEmail,
-      '⚠️ MedPal Missed Medicine Alert',
-      emailHtml
+  if (data.reminderType === 'email' || data.reminderType === 'both') {
+    results.push(
+      await sendEmailNotification(
+        data.userEmail,
+        '⚠️ Missed Medicine Alert',
+        `<h1>⚠️ You missed your medicine</h1>`
+      )
     );
-    results.push(emailResult);
   }
 
   return results;
 };
 
-// OTP Generation and Verification
-export const generateOTP = (): string => {
-  return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
-};
-
-export const sendOTP = async (phone: string, otp: string): Promise<NotificationResult> => {
-  const message = `🏥 Your MedPal verification code is: ${otp}. This code will expire in 10 minutes. Do not share this code with anyone.`;
-  return await sendSMSNotification(phone, message);
-};
-
-// Send low stock notification
 export const sendLowStockNotification = async (
   userId: string,
   userName: string,
@@ -288,65 +176,97 @@ export const sendLowStockNotification = async (
   threshold: number
 ): Promise<NotificationResult[]> => {
   const results: NotificationResult[] = [];
-  
-  const smsMessage = `📦 MEDPAL STOCK ALERT 📦\n\nHi ${userName},\n\nYour medicine stock is running low:\n💊 ${medicineName}\n📊 Current: ${currentStock}\n⚠️ Threshold: ${threshold}\n\nPlease refill your prescription soon to avoid running out.\n\nStay prepared! 💪`;
+  const smsMessage = `📦 MEDPAL STOCK ALERT 📦\n\nHi ${userName}, your stock for ${medicineName} is low (${currentStock} left). Please refill soon!`;
 
-  const emailHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #ffa726 0%, #ff9800 100%); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-        .content { background: #f9f9f9; padding: 20px; border-radius: 0 0 10px 10px; }
-        .stock-card { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #ffa726; }
-        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>📦 MEDPAL Stock Alert</h1>
-        </div>
-        <div class="content">
-          <h2>Hi ${userName},</h2>
-          <p><strong>Your medicine stock is running low!</strong></p>
-          
-          <div class="stock-card">
-            <h3>💊 ${medicineName}</h3>
-            <p><strong>Current Stock:</strong> ${currentStock}</p>
-            <p><strong>Low Stock Threshold:</strong> ${threshold}</p>
-          </div>
-          
-          <p><strong>Action Required:</strong></p>
-          <ul>
-            <li>Refill your prescription soon</li>
-            <li>Contact your pharmacy or healthcare provider</li>
-            <li>Update your inventory in the MedPal app</li>
-          </ul>
-          
-          <p>Don't wait until you run out - stay prepared for your health!</p>
-        </div>
-        <div class="footer">
-          <p>This is an automated alert from MedPal - Your trusted healthcare companion</p>
-          <p>Stay prepared! 💪</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  // Send both SMS and email for stock alerts
-  const smsResult = await sendSMSNotification(userPhone, smsMessage);
-  results.push(smsResult);
-
-  const emailResult = await sendEmailNotification(
-    userEmail,
-    '📦 MedPal Stock Alert',
-    emailHtml
+  results.push(await sendSMSNotification(userPhone, smsMessage));
+  results.push(
+    await sendEmailNotification(
+      userEmail,
+      '📦 MedPal Stock Alert',
+      `<h1>Low Stock Alert</h1>`
+    )
   );
-  results.push(emailResult);
+
+  return results;
+};
+
+// OTP
+export const generateOTP = (): string =>
+  Math.floor(100000 + Math.random() * 900000).toString();
+
+export const sendOTP = async (
+  phone: string,
+  otp: string
+): Promise<NotificationResult> => {
+  const message = `🏥 Your MedPal verification code is: ${otp}`;
+  return await sendSMSNotification(phone, message);
+};
+
+// Critical reminder
+export const sendCriticalMedicineReminder = async (
+  data: NotificationData
+): Promise<NotificationResult[]> => {
+  const results: NotificationResult[] = [];
+  const smsMessage = `🚨 CRITICAL ALERT 🚨\nHi ${data.userName}, please take your critical medicine:\n💊 ${data.medicineName}\n📏 ${data.dosage}`;
+
+  if (data.reminderType === 'sms' || data.reminderType === 'both') {
+    results.push(await sendSMSNotification(data.userPhone, smsMessage));
+  }
+  if (data.reminderType === 'email' || data.reminderType === 'both') {
+    results.push(
+      await sendEmailNotification(
+        data.userEmail,
+        '🚨 Critical Medicine Reminder',
+        `<h1>🚨 Critical Reminder</h1>`
+      )
+    );
+  }
+
+  return results;
+};
+
+// Appointment reminder
+export const sendAppointmentReminder = async (
+  data: NotificationData
+): Promise<NotificationResult[]> => {
+  const results: NotificationResult[] = [];
+  const smsMessage = `📅 APPOINTMENT REMINDER 📅\nHi ${data.userName}, you have an appointment on:\n⏰ ${data.appointmentDate}`;
+
+  if (data.reminderType === 'sms' || data.reminderType === 'both') {
+    results.push(await sendSMSNotification(data.userPhone, smsMessage));
+  }
+  if (data.reminderType === 'email' || data.reminderType === 'both') {
+    results.push(
+      await sendEmailNotification(
+        data.userEmail,
+        '📅 Appointment Reminder',
+        `<h1>Appointment Reminder</h1>`
+      )
+    );
+  }
+
+  return results;
+};
+
+// Refill reminder
+export const sendRefillReminder = async (
+  data: NotificationData
+): Promise<NotificationResult[]> => {
+  const results: NotificationResult[] = [];
+  const smsMessage = `💊 REFILL REMINDER 💊\nHi ${data.userName}, your medicine ${data.medicineName} will run out soon. Only ${data.daysLeft} days left!`;
+
+  if (data.reminderType === 'sms' || data.reminderType === 'both') {
+    results.push(await sendSMSNotification(data.userPhone, smsMessage));
+  }
+  if (data.reminderType === 'email' || data.reminderType === 'both') {
+    results.push(
+      await sendEmailNotification(
+        data.userEmail,
+        '💊 Refill Reminder',
+        `<h1>Refill Reminder</h1>`
+      )
+    );
+  }
 
   return results;
 };
